@@ -50,19 +50,19 @@
         <!-- Contadores -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-green-600">{{ activas }}</div>
+                <div id="contadorActivas" class="text-2xl font-bold text-green-600">{{ activas }}</div>
                 <div class="text-sm text-gray-600">Ligas Activas</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-yellow-600">{{ inactivas }}</div>
+                <div id="contadorInactivas" class="text-2xl font-bold text-yellow-600">{{ inactivas }}</div>
                 <div class="text-sm text-gray-600">Ligas Inactivas</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-blue-600">{{ total_equipos }}</div>
+                <div id="contadorEquipos" class="text-2xl font-bold text-blue-600">{{ total_equipos }}</div>
                 <div class="text-sm text-gray-600">Total Equipos</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-purple-600">{{ total_jugadores }}</div>
+                <div id="contadorJugadores" class="text-2xl font-bold text-purple-600">{{ total_jugadores }}</div>
                 <div class="text-sm text-gray-600">Total Jugadores</div>
             </div>
         </div>
@@ -187,8 +187,29 @@
                     }
                     lucide.createIcons();
                     mostrarAlerta('success', 'Estado actualizado', data.mensaje);
+
+                    // ── NUEVO: Actualizar contadores en tiempo real ──
+                    actualizarContadoresLigas();
                 })
                 .catch(() => mostrarAlerta('error', 'Error', 'No se pudo cambiar el estado.'));
+        }
+
+        // ── NUEVO: Actualiza los contadores de ligas en tiempo real ──
+        function actualizarContadoresLigas() {
+            fetch('/consulta/contadores-ligas')
+                .then(r => r.json())
+                .then(data => {
+                    const activas   = document.getElementById('contadorActivas');
+                    const inactivas = document.getElementById('contadorInactivas');
+                    const equipos   = document.getElementById('contadorEquipos');
+                    const jugadores = document.getElementById('contadorJugadores');
+                    
+                    if (activas)   activas.textContent   = data.activas   || 0;
+                    if (inactivas) inactivas.textContent = data.inactivas || 0;
+                    if (equipos)   equipos.textContent   = data.total_equipos   || 0;
+                    if (jugadores) jugadores.textContent = data.total_jugadores || 0;
+                })
+                .catch(() => {});
         }
 
         // Muestra una alerta temporal de éxito o error

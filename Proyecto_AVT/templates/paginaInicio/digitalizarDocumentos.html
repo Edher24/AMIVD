@@ -27,14 +27,25 @@
                 <label class="block text-sm font-medium text-white mb-2">
                     Buscar Jugador / Árbitro / Entrenador
                 </label>
-                <div class="flex gap-2">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <!-- Selector de tipo (NUEVO) -->
+                    <select id="tipoPersonaBuscar"
+                            class="px-4 py-2 rounded-lg border border-red-400 bg-white
+                                   focus:outline-none focus:ring-2 focus:ring-white text-gray-700">
+                        <option value="">Todos los tipos</option>
+                        <option value="jugador">Jugador</option>
+                        <option value="arbitro">Árbitro</option>
+                        <option value="entrenador">Entrenador</option>
+                    </select>
+                    <!-- Campo de búsqueda -->
                     <input type="text" id="buscarPersona"
                            placeholder="Nombre o número de registro..."
-                           class="flex-1 px-4 py-2 rounded-lg border border-red-400 bg-white
+                           class="px-4 py-2 rounded-lg border border-red-400 bg-white
                                   focus:outline-none focus:ring-2 focus:ring-white">
+                    <!-- Botón Buscar -->
                     <button onclick="buscarPersonaDocumento()"
                             class="bg-red-600 text-white px-4 py-2 rounded-lg
-                                   hover:bg-red-500 transition-colors flex items-center gap-2">
+                                   hover:bg-red-500 transition-colors flex items-center justify-center gap-2">
                         <i data-lucide="search" class="w-4 h-4"></i>
                         Buscar
                     </button>
@@ -259,15 +270,26 @@
         // Habilita/deshabilita el botón al cambiar el tipo de documento
         document.getElementById('tipoDocumento').addEventListener('change', actualizarBoton);
 
-        // Busca una persona por nombre o número de registro para asociarla al documento
+        // Busca una persona por nombre o número de registro, con filtro por tipo
         function buscarPersonaDocumento() {
-            const termino = document.getElementById('buscarPersona').value.trim();
-            if (!termino) return;
+            const termino    = document.getElementById('buscarPersona').value.trim();
+            const tipoFiltro = document.getElementById('tipoPersonaBuscar').value;
+
+            if (!termino) {
+                mostrarAlerta('warning', 'Campo vacío', 'Ingresa un nombre o número de registro.');
+                return;
+            }
 
             document.getElementById('alertaPersona').classList.add('hidden');
             document.getElementById('resultadoPersona').classList.add('hidden');
 
-            fetch(`{{ url_for('principal.buscar_expediente') }}?termino=${encodeURIComponent(termino)}`)
+            // Construir URL con parámetros
+            let url = `{{ url_for('principal.buscar_expediente') }}?termino=${encodeURIComponent(termino)}`;
+            if (tipoFiltro) {
+                url += `&tipo=${encodeURIComponent(tipoFiltro)}`;
+            }
+
+            fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (!data.ok || !data.resultados.length) {
@@ -277,20 +299,26 @@
                     }
                     // Tomar el primer resultado y mostrar sus datos
                     const p = data.resultados[0];
-                    document.getElementById('idPersona').value   = p.id_persona;
-                    document.getElementById('tipoPersona').value = p.tipo;
-                    document.getElementById('nombrePersonaSeleccionada').textContent = p.nombre;
-                    document.getElementById('tipoPersonaSeleccionada').textContent   =
-                        p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1) +
-                        ' — Reg: ' + p.numero_registro;
-                    document.getElementById('resultadoPersona').classList.remove('hidden');
-                    lucide.createIcons();
-                    actualizarBoton();
+                    seleccionarPersona(p);
                 })
                 .catch(() => {
                     document.getElementById('alertaPersona').classList.remove('hidden');
                     lucide.createIcons();
                 });
+        }
+
+        // Selecciona una persona y muestra sus datos
+        function seleccionarPersona(p) {
+            document.getElementById('idPersona').value   = p.id_persona;
+            document.getElementById('tipoPersona').value = p.tipo;
+            document.getElementById('nombrePersonaSeleccionada').textContent = p.nombre;
+            document.getElementById('tipoPersonaSeleccionada').textContent   =
+                p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1) +
+                ' — Reg: ' + p.numero_registro;
+            document.getElementById('resultadoPersona').classList.remove('hidden');
+            document.getElementById('alertaPersona').classList.add('hidden');
+            lucide.createIcons();
+            actualizarBoton();
         }
 
         // Permite buscar presionando Enter en el campo de búsqueda
@@ -360,7 +388,6 @@
             document.getElementById('progreso').classList.remove('hidden');
             let p = 0;
 
-            // Simula el progreso de subida con un intervalo
             const iv = setInterval(() => {
                 p += Math.random() * 15;
                 if (p > 90) p = 90;

@@ -20,19 +20,19 @@
         <!-- Tarjetas con contadores de solicitudes -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white rounded-xl shadow-md p-6 text-center">
-                <div class="text-3xl font-bold text-yellow-600 mb-2">
+                <div id="contadorPendientes" class="text-3xl font-bold text-yellow-600 mb-2">
                     {{ contadores['pendientes'] or 0 }}
                 </div>
                 <div class="text-gray-600">Solicitudes Pendientes</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-6 text-center">
-                <div class="text-3xl font-bold text-green-600 mb-2">
+                <div id="contadorHoy" class="text-3xl font-bold text-green-600 mb-2">
                     {{ contadores['hoy'] or 0 }}
                 </div>
                 <div class="text-gray-600">Autorizadas Hoy</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-6 text-center">
-                <div class="text-3xl font-bold text-red-600 mb-2">
+                <div id="contadorRechazadas" class="text-3xl font-bold text-red-600 mb-2">
                     {{ contadores['rechazadas'] or 0 }}
                 </div>
                 <div class="text-gray-600">Rechazadas</div>
@@ -241,6 +241,20 @@
             });
         }
 
+        // Actualiza los contadores desde el backend
+        function actualizarContadores() {
+            fetch('/autorizar/contadores')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('contadorPendientes').textContent = data.pendientes || 0;
+                    document.getElementById('contadorHoy').textContent = data.hoy || 0;
+                    document.getElementById('contadorRechazadas').textContent = data.rechazadas || 0;
+                })
+                .catch(() => {
+                    // Si falla, no hacer nada (los contadores quedan como estaban)
+                });
+        }
+
         // Aprueba una solicitud y actualiza su estado visualmente sin recargar
         function aprobar(id) {
             if (!confirm('¿Autorizar esta solicitud? Se enviará correo al solicitante.')) return;
@@ -261,6 +275,8 @@
                         });
                         // Quitar botones de acción
                         el.querySelector('.flex.gap-2.flex-shrink-0')?.remove();
+                        // Actualizar contadores
+                        actualizarContadores();
                         lucide.createIcons();
                     } else {
                         mostrarAlerta('error', 'Error', data.mensaje);
@@ -308,6 +324,8 @@
                             }
                         });
                         el.querySelector('.flex.gap-2.flex-shrink-0')?.remove();
+                        // Actualizar contadores
+                        actualizarContadores();
                         lucide.createIcons();
                     } else {
                         mostrarAlerta('error', 'Error', data.mensaje);

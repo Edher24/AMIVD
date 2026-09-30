@@ -95,7 +95,6 @@ def marcar_leida(id_notif):
 @login_requerido
 def digitalizar():
     cur = mysql.connection.cursor()
-    # Mostrar todos los documentos con el nombre del jugador asociado
     cur.execute("""
         SELECT fd.id_formato, fd.nombre_archivo, fd.tipo, fd.fecha_subida, fd.ruta,
                CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) AS nombre_persona
@@ -148,7 +147,6 @@ def subir_documento():
 
     cur = mysql.connection.cursor()
 
-    # Buscar nombre según la tabla correcta
     if tipo_persona == 'entrenador':
         cur.execute("""
             SELECT CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) AS nombre
@@ -168,10 +166,7 @@ def subir_documento():
     persona = cur.fetchone()
     nombre_persona = persona['nombre'] if persona else '—'
 
-    # Para entrenador/arbitro necesitamos un id_jugador válido en formato_digital.
-    # Usamos el id de la persona directamente (la FK acepta cualquier bigint existente en jugador).
-    # Si el tipo no es jugador, guardamos el id como referencia genérica.
-    id_jugador_ref = id_persona  # para jugador es correcto; para otros es referencia
+    id_jugador_ref = id_persona
 
     cur.execute("""
         INSERT INTO formato_digital (id_jugador, nombre_archivo, ruta, tipo, fecha_subida)
@@ -195,7 +190,6 @@ def subir_documento():
 @login_requerido
 def eliminar_documento(id_doc):
     cur = mysql.connection.cursor()
-    # Buscar solo por id_formato, sin filtrar por usuario
     cur.execute("SELECT ruta FROM formato_digital WHERE id_formato = %s", (id_doc,))
     fila = cur.fetchone()
     if not fila:
@@ -227,10 +221,12 @@ def buscar_expediente():
     """
     Busca por nombre o número de registro en las tres tablas:
     jugador (con expediente), entrenador y arbitro.
-    expediente solo tiene id_jugador, así que entrenador/arbitro
-    se devuelven sin id_expediente para digitalizar documentos.
+    Acepta un parámetro opcional 'tipo' para filtrar por:
+    jugador, arbitro, entrenador.
     """
     termino = request.args.get('termino', '').strip()
+    tipo_filtro = request.args.get('tipo', '').strip()
+
     if not termino:
         return jsonify({'ok': False, 'mensaje': 'Ingrese un nombre o número'}), 400
 
@@ -238,63 +234,66 @@ def buscar_expediente():
     resultados = []
 
     # ── Jugadores (con o sin expediente) ─────────
-    try:
-        cur.execute("""
-            SELECT e.id_expediente, e.estatus, e.fecha_creacion,
-                   j.id_jugador AS id_persona,
-                   CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) AS nombre_completo,
-                   j.numero_registro, j.categoria, 'jugador' AS tipo
-            FROM jugador j
-            LEFT JOIN expediente e ON e.id_jugador = j.id_jugador
-            WHERE CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) LIKE %s
-               OR COALESCE(j.numero_registro,'') LIKE %s
-               OR CAST(j.id_jugador AS CHAR) LIKE %s
-        """, (f'%{termino}%', f'%{termino}%', f'%{termino}%'))
-    except Exception:
-        # numero_registro o categoria no existen aún — buscar solo por nombre/id
-        cur.execute("""
-            SELECT e.id_expediente, e.estatus, e.fecha_creacion,
-                   j.id_jugador AS id_persona,
-                   CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) AS nombre_completo,
-                   NULL AS numero_registro, NULL AS categoria, 'jugador' AS tipo
-            FROM jugador j
-            LEFT JOIN expediente e ON e.id_jugador = j.id_jugador
-            WHERE CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) LIKE %s
-               OR CAST(j.id_jugador AS CHAR) LIKE %s
-        """, (f'%{termino}%', f'%{termino}%'))
-    resultados += cur.fetchall()
+    if not tipo_filtro or tipo_filtro == 'jugador':
+        try:
+            cur.execute("""
+                SELECT e.id_expediente, e.estatus, e.fecha_creacion,
+                       j.id_jugador AS id_persona,
+                       CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) AS nombre_completo,
+                       j.numero_registro, j.categoria, 'jugador' AS tipo
+                FROM jugador j
+                LEFT JOIN expediente e ON e.id_jugador = j.id_jugador
+                WHERE CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) LIKE %s
+                   OR COALESCE(j.numero_registro,'') LIKE %s
+                   OR CAST(j.id_jugador AS CHAR) LIKE %s
+            """, (f'%{termino}%', f'%{termino}%', f'%{termino}%'))
+        except Exception:
+            cur.execute("""
+                SELECT e.id_expediente, e.estatus, e.fecha_creacion,
+                       j.id_jugador AS id_persona,
+                       CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) AS nombre_completo,
+                       NULL AS numero_registro, NULL AS categoria, 'jugador' AS tipo
+                FROM jugador j
+                LEFT JOIN expediente e ON e.id_jugador = j.id_jugador
+                WHERE CONCAT(j.apellido_paterno,' ',j.apellido_materno,' ',j.nombres) LIKE %s
+                   OR CAST(j.id_jugador AS CHAR) LIKE %s
+            """, (f'%{termino}%', f'%{termino}%'))
+        resultados += cur.fetchall()
 
     # ── Entrenadores ──────────────────────────────
-    try:
-        cur.execute("""
-            SELECT NULL AS id_expediente, 'activo' AS estatus, fecha_registro AS fecha_creacion,
-                   id_entrenador AS id_persona,
-                   CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) AS nombre_completo,
-                   numero_registro, categoria, 'entrenador' AS tipo
-            FROM entrenador
-            WHERE CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) LIKE %s
-               OR COALESCE(numero_registro,'') LIKE %s
-               OR CAST(id_entrenador AS CHAR) LIKE %s
-        """, (f'%{termino}%', f'%{termino}%', f'%{termino}%'))
-        resultados += cur.fetchall()
-    except Exception:
-        pass  # tabla entrenador no existe aún — ignorar
+    if not tipo_filtro or tipo_filtro == 'entrenador':
+        try:
+            cur.execute("""
+                SELECT NULL AS id_expediente, 'activo' AS estatus, fecha_registro AS fecha_creacion,
+                       id_entrenador AS id_persona,
+                       CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) AS nombre_completo,
+                       numero_registro, categoria, 'entrenador' AS tipo
+                FROM entrenador
+                WHERE CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) LIKE %s
+                   OR COALESCE(numero_registro,'') LIKE %s
+                   OR CAST(id_entrenador AS CHAR) LIKE %s
+            """, (f'%{termino}%', f'%{termino}%', f'%{termino}%'))
+            resultados += cur.fetchall()
+        except Exception:
+            pass
 
     # ── Árbitros ──────────────────────────────────
-    try:
-        cur.execute("""
-            SELECT NULL AS id_expediente, 'activo' AS estatus, fecha_registro AS fecha_creacion,
-                   id_arbitro AS id_persona,
-                   CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) AS nombre_completo,
-                   numero_registro, categoria, 'arbitro' AS tipo
-            FROM arbitro
-            WHERE CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) LIKE %s
-               OR COALESCE(numero_registro,'') LIKE %s
-               OR CAST(id_arbitro AS CHAR) LIKE %s
-        """, (f'%{termino}%', f'%{termino}%', f'%{termino}%'))
-        resultados += cur.fetchall()
-    except Exception:
-        pass  # tabla arbitro no existe aún — ignorar
+    if not tipo_filtro or tipo_filtro == 'arbitro':
+        try:
+            cur.execute("""
+                SELECT NULL AS id_expediente, 'activo' AS estatus, fecha_registro AS fecha_creacion,
+                       id_arbitro AS id_persona,
+                       CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) AS nombre_completo,
+                       numero_registro, categoria, 'arbitro' AS tipo
+                FROM arbitro
+                WHERE CONCAT(apellido_paterno,' ',apellido_materno,' ',nombres) LIKE %s
+                   OR COALESCE(numero_registro,'') LIKE %s
+                   OR CAST(id_arbitro AS CHAR) LIKE %s
+            """, (f'%{termino}%', f'%{termino}%', f'%{termino}%'))
+            resultados += cur.fetchall()
+        except Exception:
+            pass
+
     cur.close()
 
     if not resultados:
@@ -319,16 +318,16 @@ def buscar_expediente():
 @principal.route("/expedientes/generar", methods=["POST"])
 @login_requerido
 def generar_expediente():
-    id_expediente = request.json.get('id_expediente')
-    tipo          = request.json.get('tipo', 'jugador')
+    # CAMBIO: se recibe id_persona en lugar de id_expediente
+    id_persona = request.json.get('id_persona')
+    tipo       = request.json.get('tipo', 'jugador')
 
-    if not id_expediente:
+    if not id_persona:
         return jsonify({'ok': False, 'mensaje': 'Datos requeridos'}), 400
 
     cur = mysql.connection.cursor()
 
     if tipo == 'jugador':
-        # Intentar con columnas nuevas (post-migración); si falla, usar columnas originales
         try:
             cur.execute("""
                 SELECT e.id_expediente, e.estatus, e.fecha_creacion,
@@ -339,23 +338,21 @@ def generar_expediente():
                        j.telefono, j.celular, j.correo_electronico,
                        j.fotografia,
                        j.medicamentos,
-                       -- columnas post-migración (pueden no existir)
                        j.numero_registro, j.categoria, j.tipo_sangre,
                        j.club, j.ligas_participa, j.vigencia, j.rama,
                        j.enfermedades_cronicas,
                        d.calle, d.numero_exterior, d.colonia, d.codigo_postal,
                        COALESCE(d.nombre_municipio, m.nombre) AS nombre_municipio,
                        eq.nombre_equipo, l.nombre_liga
-                FROM expediente e
-                JOIN jugador j ON j.id_jugador = e.id_jugador
+                FROM jugador j
+                LEFT JOIN expediente e ON e.id_jugador = j.id_jugador
                 LEFT JOIN direccion d     ON d.id_jugador  = j.id_jugador
                 LEFT JOIN cat_municipio m ON m.id_municipio = d.id_municipio
                 LEFT JOIN equipo eq       ON eq.id_equipo   = j.id_equipo
                 LEFT JOIN liga l          ON l.id_liga       = eq.id_liga
-                WHERE e.id_expediente = %s
-            """, (id_expediente,))
+                WHERE j.id_jugador = %s
+            """, (id_persona,))
         except Exception:
-            # BD original sin migración — columnas mínimas
             cur.execute("""
                 SELECT e.id_expediente, e.estatus, e.fecha_creacion,
                        j.id_jugador, j.apellido_paterno, j.apellido_materno, j.nombres,
@@ -371,12 +368,12 @@ def generar_expediente():
                        d.calle, d.numero_exterior, d.colonia, d.codigo_postal,
                        m.nombre AS nombre_municipio,
                        NULL AS nombre_equipo, NULL AS nombre_liga
-                FROM expediente e
-                JOIN jugador j ON j.id_jugador = e.id_jugador
+                FROM jugador j
+                LEFT JOIN expediente e ON e.id_jugador = j.id_jugador
                 LEFT JOIN direccion d     ON d.id_jugador  = j.id_jugador
                 LEFT JOIN cat_municipio m ON m.id_municipio = d.id_municipio
-                WHERE e.id_expediente = %s
-            """, (id_expediente,))
+                WHERE j.id_jugador = %s
+            """, (id_persona,))
 
     elif tipo == 'entrenador':
         cur.execute("""
@@ -395,7 +392,7 @@ def generar_expediente():
                    NULL AS nombre_equipo, NULL AS nombre_liga,
                    cedula, especialidad
             FROM entrenador WHERE id_entrenador = %s
-        """, (id_expediente,))
+        """, (id_persona,))
 
     elif tipo == 'arbitro':
         cur.execute("""
@@ -414,14 +411,13 @@ def generar_expediente():
                    NULL AS nombre_equipo, NULL AS nombre_liga,
                    zona, licencia
             FROM arbitro WHERE id_arbitro = %s
-        """, (id_expediente,))
+        """, (id_persona,))
     else:
         cur.close()
         return jsonify({'ok': False, 'mensaje': 'Tipo inválido'}), 400
 
     fila = cur.fetchone()
 
-    # Sanciones del jugador (si aplica)
     sanciones = []
     if tipo == 'jugador' and fila:
         try:
@@ -449,7 +445,6 @@ def generar_expediente():
     ws = wb.active
     ws.title = "Expediente"
 
-    # Estilos
     titulo_font   = Font(bold=True, size=14, color="FFFFFF")
     titulo_fill   = PatternFill("solid", fgColor="7A0C0C")
     seccion_font  = Font(bold=True, size=11, color="7A0C0C")
@@ -527,7 +522,6 @@ def generar_expediente():
         fila_dato(ws, "Zona",     fila.get('zona') or '—')
 
     fila_seccion(ws, "SALUD")
-    # enfermedades_cronicas puede ser tinyint(1) o varchar según migración
     enf = fila.get('enfermedades_cronicas')
     if enf is None or enf == 0 or enf == '0':
         enf_texto = 'NINGUNA'
@@ -538,7 +532,6 @@ def generar_expediente():
     fila_dato(ws, "Enfermedades Crónicas", enf_texto)
     fila_dato(ws, "Medicamentos",          fila.get('medicamentos') or 'NINGUNA')
 
-    # Sanciones
     if sanciones:
         fila_seccion(ws, "SANCIONES")
         ws.append(["Tipo", "Liga", "Fecha", "Fecha Fin", "Motivo", "Estatus"])
@@ -554,7 +547,6 @@ def generar_expediente():
                 s['estatus'],
             ])
 
-    # Ajustar ancho de columnas
     ws.column_dimensions['A'].width = 28
     ws.column_dimensions['B'].width = 40
 
@@ -564,7 +556,7 @@ def generar_expediente():
     return send_file(output,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                      as_attachment=True,
-                     download_name=f"expediente_{id_expediente}.xlsx")
+                     download_name=f"expediente_{id_persona}.xlsx")
 
 
 # ── Utilidad ──────────────────────────────────────

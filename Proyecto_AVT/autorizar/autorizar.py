@@ -1,7 +1,7 @@
 # Adriana Nicole Guzman Ahuatzi
 #01/04/2026
 # Descripción: Rutas para la autorización de registros de jugadores, entrenadores, árbitros y registros externos.
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, flash
 from extensiones import mysql, notificar
 
 autorizar = Blueprint('autorizar', __name__, url_prefix="/autorizar")
@@ -13,9 +13,15 @@ def login_requerido(f):
     def decorador(*args, **kwargs):
         if 'id_usuario' not in session:
             return redirect(url_for('auth.iniciarSesion'))
+        # RNF_06: solo Administrador y Presidente pueden autorizar
+        if session.get('rol') not in ('Administrador', 'Presidente'):
+            mensaje = 'No tienes los permisos suficientes'
+            if request.method == 'GET' and not request.path.endswith('/contadores'):
+                flash(mensaje, 'permiso')
+                return redirect(url_for('registro.registroGeneral'))
+            return jsonify({'ok': False, 'error': mensaje}), 403
         return f(*args, **kwargs)
     return decorador
-
 
 # ══════════════════════════════════════════════════
 # VISTA PRINCIPAL
@@ -79,6 +85,27 @@ def autorizarRegistro():
         solicitudes=solicitudes,
         contadores=contadores
     )
+
+
+# ══════════════════════════════════════════════════
+# CONTADORES (para actualizar en tiempo real)
+# ══════════════════════════════════════════════════
+
+@autorizar.route("/contadores")
+@login_requerido
+def contadores():
+    cur = mysql.connection.cursor()
+    cur.execute("""
+        SELECT
+            SUM(estatus = 'Pendiente')  AS pendientes,
+            SUM(estatus = 'Autorizado'
+                AND DATE(fecha_solicitud) = CURDATE()) AS hoy,
+            SUM(estatus = 'Rechazado')  AS rechazadas
+        FROM autorizacion_pendiente
+    """)
+    contadores = cur.fetchone()
+    cur.close()
+    return jsonify(contadores)
 
 
 # ══════════════════════════════════════════════════

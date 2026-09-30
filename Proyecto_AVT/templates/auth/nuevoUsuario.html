@@ -43,29 +43,36 @@
 
                 <div class="form-group">
                     <label>Nombre de usuario *</label>
-                    <input type="text" name="nombre_usuario" required placeholder="usuario123">
+                    <input type="text" name="nombre_usuario" required placeholder="usuario123"
+                        oninvalid="this.setCustomValidity('Por favor, ingresa un nombre de usuario')"
+                        oninput="this.setCustomValidity('')">
                 </div>
 
                 <div class="form-group">
                     <label>Nombre completo *</label>
                     <input type="text" name="nombre_completo" required
-                        placeholder="Apellido Paterno Apellido Materno Nombre(s)">
+                        placeholder="Apellido Paterno Apellido Materno Nombre(s)"
+                        oninvalid="this.setCustomValidity('Por favor, ingresa tu nombre completo')"
+                        oninput="this.setCustomValidity('')">
                 </div>
 
                 <div class="form-group">
                     <label>Correo electrónico *</label>
-                    <input type="email" name="email" required placeholder="correo@ejemplo.com">
+                    <input type="email" name="email" required placeholder="correo@ejemplo.com"
+                        oninvalid="this.setCustomValidity('Por favor, ingresa un correo electrónico válido')"
+                        oninput="this.setCustomValidity('')">
                 </div>
 
                 <!-- Selector de rol del nuevo usuario -->
                 <div class="form-group">
                     <label>Rol *</label>
-                    <select name="rol" required>
+                    <select name="rol" required
+                        oninvalid="this.setCustomValidity('Por favor, selecciona un rol')"
+                        oninput="this.setCustomValidity('')">
                         <option value="">Seleccione un rol</option>
                         <option value="Presidente">Presidente</option>
                         <option value="Secretaria">Secretaria</option>
                         <option value="Administrador">Administrador</option>
-                        <option value="Delegado">Delegado</option>
                     </select>
                 </div>
 
@@ -73,7 +80,9 @@
                 <div class="form-group password-group">
                     <label>Contraseña *</label>
                     <input id="password" type="password" name="password" required
-                        placeholder="Mínimo 8 caracteres">
+                        placeholder="Mínimo 8 caracteres"
+                        oninvalid="this.setCustomValidity('Por favor, ingresa una contraseña')"
+                        oninput="this.setCustomValidity('')">
                     <button type="button" onclick="togglePass('password')" class="eye-btn">
                         <i data-lucide="eye" id="ico-password"></i>
                     </button>
@@ -82,7 +91,9 @@
                 <!-- Confirmación de contraseña -->
                 <div class="form-group password-group">
                     <label>Confirmar contraseña *</label>
-                    <input id="password2" type="password" required placeholder="Repite la contraseña">
+                    <input id="password2" type="password" required placeholder="Repite la contraseña"
+                        oninvalid="this.setCustomValidity('Por favor, confirma tu contraseña')"
+                        oninput="this.setCustomValidity('')">
                     <button type="button" onclick="togglePass('password2')" class="eye-btn">
                         <i data-lucide="eye" id="ico-password2"></i>
                     </button>

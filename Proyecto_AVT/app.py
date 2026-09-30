@@ -6,16 +6,9 @@ from flask import Flask, render_template, session, redirect, url_for
 from config import Config
 from extensiones import mysql, bcrypt, mail
 from functools import wraps
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
 
 app = Flask(__name__)
 app.config.from_object(Config)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mi_db.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-migrate = Migrate(app, db)
 
 # Inicializar extensiones
 mysql.init_app(app)

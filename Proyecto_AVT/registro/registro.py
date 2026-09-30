@@ -1,4 +1,5 @@
 # Adriana Nicole Guzman Ahuatzi
+#01/04/2026
 # Rutas para el módulo de registro: ligas, equipos, personas (jugadores, entrenadores, árbitros) y pagos
 from flask import Blueprint, render_template, session, redirect, url_for, request, jsonify
 from extensiones import mysql, notificar
@@ -203,17 +204,39 @@ def guardarPago():
             id_afiliacion = cur.lastrowid
         else:
             id_afiliacion = afil['id_afiliacion']
+
+        # ── NUEVO: Verificar si ya existe un pago para esta afiliación y fecha ──
         cur.execute("""
-            INSERT INTO pago (id_afiliacion, fecha_pago, estatus, metodo_pago, referencia)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (id_afiliacion, fecha_pago, estatus, metodo_pago or None, referencia or None))
-        mysql.connection.commit()
-        nuevo_id = cur.lastrowid
+            SELECT id_pago FROM pago
+            WHERE id_afiliacion = %s AND fecha_pago = %s
+        """, (id_afiliacion, fecha_pago))
+        pago_existente = cur.fetchone()
+
+        if pago_existente:
+            # Actualizar el pago existente (no generar duplicado)
+            cur.execute("""
+                UPDATE pago
+                SET estatus = %s, metodo_pago = %s, referencia = %s
+                WHERE id_pago = %s
+            """, (estatus, metodo_pago or None, referencia or None, pago_existente['id_pago']))
+            mysql.connection.commit()
+            nuevo_id = pago_existente['id_pago']
+            mensaje = 'Pago actualizado correctamente.'
+        else:
+            # Insertar nuevo pago
+            cur.execute("""
+                INSERT INTO pago (id_afiliacion, fecha_pago, estatus, metodo_pago, referencia)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (id_afiliacion, fecha_pago, estatus, metodo_pago or None, referencia or None))
+            mysql.connection.commit()
+            nuevo_id = cur.lastrowid
+            mensaje = 'Pago registrado correctamente.'
+
         notificar(cur, session['id_usuario'],
-                  f"Pago registrado para jugador #{id_jugador} — estatus: {estatus}.")
+                  f"Pago #{nuevo_id} registrado para jugador #{id_jugador} — estatus: {estatus}.")
         mysql.connection.commit()
         cur.close()
-        return jsonify({'ok': True, 'mensaje': 'Pago registrado correctamente.', 'id': nuevo_id})
+        return jsonify({'ok': True, 'mensaje': mensaje, 'id': nuevo_id})
     except Exception as e:
         mysql.connection.rollback()
         cur.close()
@@ -257,7 +280,6 @@ def registroPersona():
     cur.execute("SELECT id_municipio, nombre FROM cat_municipio ORDER BY nombre")
     municipios = cur.fetchall()
 
-    # Calcular el siguiente número de registro para cada tipo
     cur.execute("SELECT COUNT(*) AS total FROM jugador")
     sig_jugador = cur.fetchone()['total'] + 1
 
@@ -284,7 +306,6 @@ def registroPersona():
     )
 
 
-# ── Ruta AJAX para obtener el siguiente número de registro ────
 @registro.route("/persona/siguiente_registro")
 @login_requerido
 def siguienteRegistro():
@@ -311,6 +332,31 @@ def siguienteRegistro():
         return jsonify({'ok': False, 'mensaje': str(e)}), 500
 
 
+def generar_numero_registro(cur, tipo):
+    """
+    Genera el siguiente número de registro para jugador, arbitro o entrenador.
+    Usa MAX sobre el campo numero_registro para evitar colisiones aunque haya
+    huecos o inserciones fallidas previas.
+    """
+    if tipo == 'jugador':
+        tabla, prefijo = 'jugador', 'JUG'
+    elif tipo == 'entrenador':
+        tabla, prefijo = 'entrenador', 'ENT'
+    elif tipo == 'arbitro':
+        tabla, prefijo = 'arbitro', 'ARB'
+    else:
+        raise ValueError(f"Tipo inválido: {tipo}")
+ 
+    cur.execute(
+        f"SELECT MAX(CAST(SUBSTRING(numero_registro, 5) AS UNSIGNED)) AS ultimo "
+        f"FROM {tabla} WHERE numero_registro LIKE %s",
+        (f"{prefijo}-%",)
+    )
+    row    = cur.fetchone()
+    ultimo = row['ultimo'] if row and row['ultimo'] else 0
+    return f"{prefijo}-{ultimo + 1:03d}"
+ 
+
 @registro.route("/persona/guardar", methods=["POST"])
 @login_requerido
 def guardarPersona():
@@ -331,22 +377,15 @@ def guardarPersona():
         ruta_foto    = os.path.join(carpeta_foto, nombre_foto)
         foto.save(ruta_foto)
 
+    firma_base64_guardar = None
+    firma_b64 = data.get('firma_base64', '').strip()
+    if firma_b64 and firma_b64.startswith('data:image/png;base64,'):
+        firma_base64_guardar = firma_b64
+
     cur = mysql.connection.cursor()
     try:
-        # ── Generar número de registro automático ─────────────
-        if tipo == 'jugador':
-            cur.execute("SELECT COUNT(*) AS total FROM jugador")
-            prefijo = 'JUG'
-        elif tipo == 'entrenador':
-            cur.execute("SELECT COUNT(*) AS total FROM entrenador")
-            prefijo = 'ENT'
-        else:
-            cur.execute("SELECT COUNT(*) AS total FROM arbitro")
-            prefijo = 'ARB'
-        total = cur.fetchone()['total']
-        numero_registro = f"{prefijo}-{total + 1:03d}"
+        numero_registro = generar_numero_registro(cur, tipo)
 
-        # ── Resolver municipio por nombre ─────────────────────
         nombre_municipio = data.get('municipio', '').strip().upper()
         id_municipio = 1
         if nombre_municipio:
@@ -360,10 +399,8 @@ def guardarPersona():
                             (nombre_municipio,))
                 id_municipio = cur.lastrowid
 
-        # ── Equipo (opcional) ─────────────────────────────────
         id_equipo = data.get('id_equipo') or None
 
-        # ── Campos comunes a las tres tablas ──────────────────
         apellido_paterno    = data.get('apellido_paterno', '').upper()
         apellido_materno    = data.get('apellido_materno', '').upper()
         nombres             = data.get('nombres', '').upper()
@@ -388,10 +425,6 @@ def guardarPersona():
         ligas_participa     = data.get('ligas_participa', '').upper() or None
 
         if tipo == 'jugador':
-            # jugador en la BD actual tiene: id_tipo_sangre (int FK) y
-            # enfermedades_cronicas tinyint(1). Si la migración ya se ejecutó
-            # tendrá tipo_sangre varchar y enfermedades_cronicas varchar.
-            # Intentamos con las columnas nuevas primero; si falla, usamos las originales.
             try:
                 cur.execute("""
                     INSERT INTO jugador (
@@ -402,8 +435,8 @@ def guardarPersona():
                         ocupacion, escolaridad, escuela,
                         telefono, celular, correo_electronico,
                         enfermedades_cronicas, medicamentos,
-                        club, categoria, rama, ligas_participa, fotografia
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        club, categoria, rama, ligas_participa, fotografia, firma_base64
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (
                     apellido_paterno, apellido_materno, nombres,
                     numero_registro, curp, vigencia or None,
@@ -412,10 +445,9 @@ def guardarPersona():
                     ocupacion, escolaridad, escuela,
                     telefono, celular, correo,
                     enfermedades, medicamentos,
-                    club, categoria, rama, ligas_participa, ruta_foto,
+                    club, categoria, rama, ligas_participa, ruta_foto, firma_base64_guardar,
                 ))
             except Exception:
-                # BD original sin migración: columnas mínimas disponibles
                 mysql.connection.rollback()
                 cur.execute("""
                     INSERT INTO jugador (
@@ -424,20 +456,19 @@ def guardarPersona():
                         peso, estatura,
                         ocupacion, escolaridad, escuela,
                         telefono, celular, correo_electronico,
-                        medicamentos, fotografia
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        medicamentos, fotografia, firma_base64
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (
                     apellido_paterno, apellido_materno, nombres,
                     curp, fecha_nacimiento, lugar_nacimiento, nacionalidad,
                     peso, estatura,
                     ocupacion, escolaridad, escuela,
                     telefono, celular, correo,
-                    medicamentos, ruta_foto,
+                    medicamentos, ruta_foto, firma_base64_guardar,
                 ))
 
             id_persona = cur.lastrowid
 
-            # Dirección — intentar con nombre_municipio, fallback sin él
             try:
                 cur.execute("""
                     INSERT INTO direccion
@@ -465,13 +496,11 @@ def guardarPersona():
                     data.get('codigo_postal', '')
                 ))
 
-            # Expediente
             cur.execute("""
                 INSERT INTO expediente (id_jugador, estatus, fecha_creacion)
                 VALUES (%s, 'activo', NOW())
             """, (id_persona,))
 
-            # Tutor si aplica
             nombre_padre = data.get('nombre_padre', '').strip()
             if nombre_padre:
                 cur.execute("""
@@ -498,8 +527,8 @@ def guardarPersona():
                     telefono, celular, correo_electronico,
                     enfermedades_cronicas, medicamentos,
                     club, categoria, rama, ligas_participa, fotografia,
-                    cedula, especialidad
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    cedula, especialidad, firma_base64
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 id_equipo,
                 apellido_paterno, apellido_materno, nombres,
@@ -511,7 +540,7 @@ def guardarPersona():
                 enfermedades, medicamentos,
                 club, categoria, rama, ligas_participa, ruta_foto,
                 data.get('cedula') or None,
-                data.get('especialidad') or None,
+                data.get('especialidad') or None, firma_base64_guardar,
             ))
             id_persona = cur.lastrowid
 
@@ -527,8 +556,8 @@ def guardarPersona():
                     telefono, celular, correo_electronico,
                     enfermedades_cronicas, medicamentos,
                     club, categoria, rama, ligas_participa, fotografia,
-                    zona, licencia
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    zona, licencia, firma_base64
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 id_equipo,
                 apellido_paterno, apellido_materno, nombres,
@@ -541,10 +570,10 @@ def guardarPersona():
                 club, categoria, rama, ligas_participa, ruta_foto,
                 data.get('zona') or None,
                 data.get('licencia') or None,
+                firma_base64_guardar,
             ))
             id_persona = cur.lastrowid
 
-        # Autorización pendiente para todos los tipos
         cur.execute("""
             INSERT INTO autorizacion_pendiente
                 (tipo_solicitud, id_referencia, fecha_solicitud, estatus)

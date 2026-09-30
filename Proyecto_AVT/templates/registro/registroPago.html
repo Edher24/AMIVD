@@ -143,15 +143,18 @@
                                 rounded-lg hover:shadow-sm transition"
                          id="pago-{{ pago['id_pago'] }}">
                         <div class="flex items-center gap-3">
+                            <!-- ── CAMBIO 1: IDs en el ícono ── -->
                             <div class="w-10 h-10 rounded-lg flex items-center justify-center
                                         {% if pago['estatus'] == 'Completado' %}bg-green-100
                                         {% elif pago['estatus'] == 'Cancelado' %}bg-red-100
-                                        {% else %}bg-yellow-100{% endif %}">
+                                        {% else %}bg-yellow-100{% endif %}"
+                                 id="icono-wrap-{{ pago['id_pago'] }}">
                                 <i data-lucide="credit-card"
                                    class="w-5 h-5
                                           {% if pago['estatus'] == 'Completado' %}text-green-600
                                           {% elif pago['estatus'] == 'Cancelado' %}text-red-600
-                                          {% else %}text-yellow-600{% endif %}">
+                                          {% else %}text-yellow-600{% endif %}"
+                                   id="icono-pago-{{ pago['id_pago'] }}">
                                 </i>
                             </div>
                             <div>
@@ -194,7 +197,6 @@
     <script>
         lucide.createIcons();
 
-        // Busca una persona por nombre o número de registro para asociarla al pago
         function buscarPersonaPago() {
             const termino = document.getElementById('buscarPago').value.trim();
             if (!termino) return;
@@ -210,7 +212,6 @@
                         lucide.createIcons();
                         return;
                     }
-                    // Tomar el primer resultado y mostrar sus datos
                     const p = data.resultados[0];
                     document.getElementById('idPersonaPago').value           = p.id_persona;
                     document.getElementById('tipoPersonaPagoHidden').value   = p.tipo;
@@ -223,12 +224,10 @@
                 });
         }
 
-        // Permite buscar presionando Enter en el campo de búsqueda
         document.getElementById('buscarPago').addEventListener('keydown', e => {
             if (e.key === 'Enter') buscarPersonaPago();
         });
 
-        // Limpia la persona seleccionada del formulario
         function limpiarPersonaPago() {
             document.getElementById('idPersonaPago').value         = '';
             document.getElementById('tipoPersonaPagoHidden').value = '';
@@ -236,7 +235,6 @@
             document.getElementById('personaPagoSeleccionada').classList.add('hidden');
         }
 
-        // Envía el formulario para registrar un nuevo pago
         function guardarPago() {
             const idPersona   = document.getElementById('idPersonaPago').value;
             const tipoPersona = document.getElementById('tipoPersonaPagoHidden').value;
@@ -264,7 +262,6 @@
                         limpiarPersonaPago();
                         document.getElementById('fechaPago').value      = '';
                         document.getElementById('referenciaPago').value = '';
-                        // Recargar para mostrar el nuevo pago en la lista
                         setTimeout(() => location.reload(), 1500);
                     } else {
                         mostrarAlerta('error', 'Error', data.mensaje);
@@ -272,18 +269,40 @@
                 });
         }
 
-        // Actualiza el estatus de un pago existente desde el selector de la lista
+        // ── CAMBIO 2: Función actualizarPago() corregida ──
         function actualizarPago(id, estatus) {
             const form = new FormData();
             form.append('estatus', estatus);
             fetch(`/registro/pago/actualizar/${id}`, { method: 'POST', body: form })
                 .then(r => r.json())
                 .then(data => {
-                    if (!data.ok) mostrarAlerta('error', 'Error', data.mensaje);
+                    if (!data.ok) {
+                        mostrarAlerta('error', 'Error', data.mensaje);
+                        return;
+                    }
+
+                    // Actualizar el color del ícono en tiempo real
+                    const iconoWrap = document.getElementById(`icono-wrap-${id}`);
+                    if (iconoWrap) {
+                        const svg = iconoWrap.querySelector('svg');
+                        
+                        if (estatus === 'Completado') {
+                            iconoWrap.className = 'w-10 h-10 rounded-lg flex items-center justify-center bg-green-100';
+                            if (svg) svg.setAttribute('stroke', '#16a34a');
+                        } else if (estatus === 'Cancelado') {
+                            iconoWrap.className = 'w-10 h-10 rounded-lg flex items-center justify-center bg-red-100';
+                            if (svg) svg.setAttribute('stroke', '#dc2626');
+                        } else {
+                            iconoWrap.className = 'w-10 h-10 rounded-lg flex items-center justify-center bg-yellow-100';
+                            if (svg) svg.setAttribute('stroke', '#ca8a04');
+                        }
+                    }
+
+                    mostrarAlerta('success', 'Estatus actualizado',
+                                  `El pago se marcó como ${estatus}.`);
                 });
         }
 
-        // Muestra una alerta temporal de éxito o error
         function mostrarAlerta(tipo, titulo, mensaje) {
             const estilos = {
                 success: 'bg-green-50 border-green-200 text-green-800',

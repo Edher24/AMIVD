@@ -1,4 +1,5 @@
 # Adriana Nicole Guzman Ahuatzi
+#01/04/2026
 # Rutas de autenticación: inicio de sesión, nuevo usuario, cierre de sesión, registro externo.
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from extensiones import mysql, bcrypt, notificar
@@ -23,28 +24,44 @@ def iniciarSesion():
     nombreUsuario = request.form["nombreUsuario"]
     password      = request.form["password"]
     cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM usuario WHERE nombre_usuario = %s AND activo = 1", (nombreUsuario,))
+    
+    # Buscar solo por nombre de usuario
+    cur.execute("SELECT * FROM usuario WHERE nombre_usuario = %s", (nombreUsuario,))
     usuario = cur.fetchone()
     cur.close()
-    if usuario and bcrypt.check_password_hash(usuario['password'], password):
-        session['id_usuario']      = usuario['id_usuario']
-        session['nombre_usuario']  = usuario['nombre_usuario']
-        session['nombre_completo'] = usuario['nombre_completo']
-        session['rol']             = usuario['rol']
-        cur2 = mysql.connection.cursor()
-        notificar(cur2, usuario['id_usuario'], "Inicio de sesión desde el sistema.")
-        mysql.connection.commit()
-        cur2.close()
-        return redirect(url_for("principal.paginaInicio"))
-    else:
-        flash("Usuario o contraseña incorrectos", "error")
+    
+    # Caso 1: Usuario no existe
+    if not usuario:
+        flash("El usuario no existe", "error")
         return redirect(url_for("auth.iniciarSesion"))
+    
+    # Caso 2: Usuario inactivo
+    if not usuario['activo']:
+        flash("El usuario está inactivo. Contacta al administrador.", "error")
+        return redirect(url_for("auth.iniciarSesion"))
+    
+    # Caso 3: Contraseña incorrecta
+    if not bcrypt.check_password_hash(usuario['password'], password):
+        flash("La contraseña es incorrecta", "error")
+        return redirect(url_for("auth.iniciarSesion"))
+    
+    # Login exitoso
+    session['id_usuario']      = usuario['id_usuario']
+    session['nombre_usuario']  = usuario['nombre_usuario']
+    session['nombre_completo'] = usuario['nombre_completo']
+    session['rol']             = usuario['rol']
+    cur2 = mysql.connection.cursor()
+    notificar(cur2, usuario['id_usuario'], "Inicio de sesión desde el sistema.")
+    mysql.connection.commit()
+    cur2.close()
+    return redirect(url_for("principal.paginaInicio"))
 
 
 # ══════════════════════════════════════════════════
 # NUEVO USUARIO
 # ══════════════════════════════════════════════════
 
+@auth.route("/nuevoUsuario", methods=["GET", "POST"])
 @auth.route("/nuevoUsuario", methods=["GET", "POST"])
 def nuevoUsuario():
     if request.method == "POST":
@@ -53,9 +70,31 @@ def nuevoUsuario():
         email           = request.form["email"]
         password        = request.form["password"]
         rol             = request.form["rol"]
-        hashed          = bcrypt.generate_password_hash(password).decode('utf-8')
+        
+        # Validar que el rol sea válido (sin 'Delegado')
+        if rol not in ('Presidente', 'Secretaria', 'Administrador'):
+            flash("Rol inválido", "error")
+            return redirect(url_for("auth.nuevoUsuario"))
+        
+        cur = mysql.connection.cursor()
+        
+        # Verificar si el nombre de usuario ya existe
+        cur.execute("SELECT id_usuario FROM usuario WHERE nombre_usuario = %s", (nombre_usuario,))
+        if cur.fetchone():
+            cur.close()
+            flash("El nombre de usuario ya está registrado", "error")
+            return redirect(url_for("auth.nuevoUsuario"))
+        
+        # Verificar si el email ya existe
+        cur.execute("SELECT id_usuario FROM usuario WHERE email = %s", (email,))
+        if cur.fetchone():
+            cur.close()
+            flash("El correo electrónico ya está registrado", "error")
+            return redirect(url_for("auth.nuevoUsuario"))
+        
+        # Insertar nuevo usuario
+        hashed = bcrypt.generate_password_hash(password).decode('utf-8')
         try:
-            cur = mysql.connection.cursor()
             cur.execute("""
                 INSERT INTO usuario (nombre_usuario, password, rol, nombre_completo, email, activo)
                 VALUES (%s, %s, %s, %s, %s, 1)
@@ -66,12 +105,15 @@ def nuevoUsuario():
             mysql.connection.commit()
             cur.close()
             flash("Usuario registrado exitosamente", "success")
+            if 'id_usuario' in session:                          # ← NUEVO
+                return redirect(url_for("auth.nuevoUsuario"))    # ← NUEVO
             return redirect(url_for("auth.iniciarSesion"))
         except Exception:
-            flash("El nombre de usuario o email ya está registrado", "error")
+            mysql.connection.rollback()
+            cur.close()
+            flash("Error al registrar el usuario. Intenta de nuevo.", "error")
             return redirect(url_for("auth.nuevoUsuario"))
     return render_template("auth/nuevoUsuario.html")
-
 
 # ══════════════════════════════════════════════════
 # CERRAR SESIÓN
@@ -86,6 +128,30 @@ def cerrarSesion():
 # ══════════════════════════════════════════════════
 # ACCESO EXTERNO
 # ══════════════════════════════════════════════════
+def generar_numero_registro(cur, tipo):
+    """
+    Genera el siguiente número de registro para jugador, arbitro o entrenador.
+    Usa MAX sobre el campo numero_registro para evitar colisiones aunque haya
+    huecos o inserciones fallidas previas.
+    """
+    if tipo == 'jugador':
+        tabla, prefijo = 'jugador', 'JUG'
+    elif tipo == 'entrenador':
+        tabla, prefijo = 'entrenador', 'ENT'
+    elif tipo == 'arbitro':
+        tabla, prefijo = 'arbitro', 'ARB'
+    else:
+        raise ValueError(f"Tipo inválido: {tipo}")
+ 
+    cur.execute(
+        f"SELECT MAX(CAST(SUBSTRING(numero_registro, 5) AS UNSIGNED)) AS ultimo "
+        f"FROM {tabla} WHERE numero_registro LIKE %s",
+        (f"{prefijo}-%",)
+    )
+    row    = cur.fetchone()
+    ultimo = row['ultimo'] if row and row['ultimo'] else 0
+    return f"{prefijo}-{ultimo + 1:03d}"
+ 
 
 @auth.route("/accesoExterno", methods=["GET"])
 def accesoExterno():
@@ -134,6 +200,7 @@ def guardarRegistroExterno():
     if tipo not in ('jugador', 'arbitro', 'entrenador'):
         return jsonify({'ok': False, 'mensaje': 'Tipo de persona inválido'}), 400
 
+    # ── Fotografía ────────────────────────────────────────────────
     foto      = request.files.get('fotoPersona')
     ruta_foto = None
     if foto and foto.filename:
@@ -143,15 +210,25 @@ def guardarRegistroExterno():
         ruta_foto    = os.path.join(carpeta_foto, nombre_foto)
         foto.save(ruta_foto)
 
+    # ── Firma digital (guardada como base64 en BD) ────────────────
+    firma_base64_guardar = None
+    firma_b64 = data.get('firma_base64', '').strip()
+    if firma_b64 and firma_b64.startswith('data:image/png;base64,'):
+        firma_base64_guardar = firma_b64
+
     vigencia = ','.join(request.form.getlist('vigencia'))
 
     cur = mysql.connection.cursor()
     try:
-        # Resolver municipio por nombre
+       
+        numero_registro = generar_numero_registro(cur, tipo)
+
+        # ── Resolver municipio por nombre ─────────────────────────
         nombre_municipio = data.get('municipio', '').strip().upper()
         id_municipio = 1
         if nombre_municipio:
-            cur.execute("SELECT id_municipio FROM cat_municipio WHERE nombre = %s", (nombre_municipio,))
+            cur.execute("SELECT id_municipio FROM cat_municipio WHERE nombre = %s",
+                        (nombre_municipio,))
             mun = cur.fetchone()
             if mun:
                 id_municipio = mun['id_municipio']
@@ -160,34 +237,31 @@ def guardarRegistroExterno():
                             (nombre_municipio,))
                 id_municipio = cur.lastrowid
 
-        campos_comunes = (
-            data.get('apellido_paterno', '').upper(),
-            data.get('apellido_materno', '').upper(),
-            data.get('nombres', '').upper(),
-            data.get('numero_registro') or None,
-            data.get('curp', '').upper(),
-            vigencia or None,
-            data.get('fecha_nacimiento'),
-            data.get('lugar_nacimiento', '').upper() or None,
-            data.get('nacionalidad', 'MEXICANA').upper(),
-            data.get('peso') or None,
-            data.get('estatura') or None,
-            data.get('tipo_sangre') or None,
-            data.get('ocupacion', '').upper() or None,
-            data.get('escolaridad', '').upper() or None,
-            data.get('escuela', '').upper() or None,
-            data.get('telefono') or None,
-            data.get('celular') or None,
-            email,
-            data.get('enfermedades_cronicas', 'NINGUNA').upper() or 'NINGUNA',
-            data.get('medicamentos', 'NINGUNA').upper() or 'NINGUNA',
-            data.get('club', '').upper() or None,
-            data.get('categoria') or None,
-            data.get('rama') or None,
-            data.get('ligas_participa', '').upper() or None,
-            ruta_foto,
-        )
+        # ── Campos comunes a las tres tablas ──────────────────────
+        apellido_paterno = data.get('apellido_paterno', '').upper()
+        apellido_materno = data.get('apellido_materno', '').upper()
+        nombres          = data.get('nombres', '').upper()
+        curp             = data.get('curp', '').upper()
+        fecha_nacimiento = data.get('fecha_nacimiento')
+        lugar_nacimiento = data.get('lugar_nacimiento', '').upper() or None
+        nacionalidad     = data.get('nacionalidad', 'MEXICANA').upper()
+        peso             = data.get('peso') or None
+        estatura         = data.get('estatura') or None
+        tipo_sangre      = data.get('tipo_sangre') or None
+        ocupacion        = data.get('ocupacion', '').upper() or None
+        escolaridad      = data.get('escolaridad', '').upper() or None
+        escuela          = data.get('escuela', '').upper() or None
+        telefono         = data.get('telefono') or None
+        celular          = data.get('celular') or None
+        correo           = email
+        enfermedades     = data.get('enfermedades_cronicas', 'NINGUNA').upper() or 'NINGUNA'
+        medicamentos     = data.get('medicamentos', 'NINGUNA').upper() or 'NINGUNA'
+        club             = data.get('club', '').upper() or None
+        categoria        = data.get('categoria') or None
+        rama             = data.get('rama') or None
+        ligas_participa  = data.get('ligas_participa', '').upper() or None
 
+        # ── INSERT por tipo ───────────────────────────────────────
         if tipo == 'jugador':
             cur.execute("""
                 INSERT INTO jugador (
@@ -198,23 +272,50 @@ def guardarRegistroExterno():
                     ocupacion, escolaridad, escuela,
                     telefono, celular, correo_electronico,
                     enfermedades_cronicas, medicamentos,
-                    club, categoria, rama, ligas_participa, fotografia
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, campos_comunes)
+                    club, categoria, rama, ligas_participa,
+                    fotografia, firma_base64
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                apellido_paterno, apellido_materno, nombres,
+                numero_registro, curp, vigencia or None,
+                fecha_nacimiento, lugar_nacimiento, nacionalidad,
+                peso, estatura, tipo_sangre,
+                ocupacion, escolaridad, escuela,
+                telefono, celular, correo,
+                enfermedades, medicamentos,
+                club, categoria, rama, ligas_participa,
+                ruta_foto, firma_base64_guardar,
+            ))
             id_persona = cur.lastrowid
 
-            cur.execute("""
-                INSERT INTO direccion
-                    (id_jugador, id_municipio, nombre_municipio,
-                     calle, numero_exterior, colonia, codigo_postal)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, (
-                id_persona, id_municipio, nombre_municipio,
-                data.get('calle', '').upper(),
-                data.get('numero_exterior', '') or None,
-                data.get('colonia', '').upper(),
-                data.get('codigo_postal', '')
-            ))
+            try:
+                cur.execute("""
+                    INSERT INTO direccion
+                        (id_jugador, id_municipio, nombre_municipio,
+                         estado_residencia,
+                         calle, numero_exterior, colonia, codigo_postal)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    id_persona, id_municipio, nombre_municipio,
+                    data.get('estado_residencia', '').upper() or None,
+                    data.get('calle', '').upper(),
+                    data.get('numero_exterior', '') or None,
+                    data.get('colonia', '').upper(),
+                    data.get('codigo_postal', ''),
+                ))
+            except Exception:
+                cur.execute("""
+                    INSERT INTO direccion
+                        (id_jugador, id_municipio,
+                         calle, numero_exterior, colonia, codigo_postal)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    id_persona, id_municipio,
+                    data.get('calle', '').upper(),
+                    data.get('numero_exterior', '') or None,
+                    data.get('colonia', '').upper(),
+                    data.get('codigo_postal', ''),
+                ))
 
             cur.execute("""
                 INSERT INTO expediente (id_jugador, estatus, fecha_creacion)
@@ -232,7 +333,7 @@ def guardarRegistroExterno():
                     nombre_padre.upper(),
                     data.get('celular_padre') or None,
                     data.get('email_padre') or None,
-                    data.get('curp_tutor', '').upper() or None
+                    data.get('curp_tutor', '').upper() or None,
                 ))
 
         elif tipo == 'entrenador':
@@ -245,12 +346,22 @@ def guardarRegistroExterno():
                     ocupacion, escolaridad, escuela,
                     telefono, celular, correo_electronico,
                     enfermedades_cronicas, medicamentos,
-                    club, categoria, rama, ligas_participa, fotografia,
-                    cedula, especialidad
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, campos_comunes + (
+                    club, categoria, rama, ligas_participa,
+                    fotografia, cedula, especialidad, firma_base64
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                apellido_paterno, apellido_materno, nombres,
+                numero_registro, curp, vigencia or None,
+                fecha_nacimiento, lugar_nacimiento, nacionalidad,
+                peso, estatura, tipo_sangre,
+                ocupacion, escolaridad, escuela,
+                telefono, celular, correo,
+                enfermedades, medicamentos,
+                club, categoria, rama, ligas_participa,
+                ruta_foto,
                 data.get('cedula') or None,
                 data.get('especialidad') or None,
+                firma_base64_guardar,
             ))
             id_persona = cur.lastrowid
 
@@ -264,27 +375,40 @@ def guardarRegistroExterno():
                     ocupacion, escolaridad, escuela,
                     telefono, celular, correo_electronico,
                     enfermedades_cronicas, medicamentos,
-                    club, categoria, rama, ligas_participa, fotografia,
-                    zona, licencia
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, campos_comunes + (
+                    club, categoria, rama, ligas_participa,
+                    fotografia, zona, licencia, firma_base64
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                apellido_paterno, apellido_materno, nombres,
+                numero_registro, curp, vigencia or None,
+                fecha_nacimiento, lugar_nacimiento, nacionalidad,
+                peso, estatura, tipo_sangre,
+                ocupacion, escolaridad, escuela,
+                telefono, celular, correo,
+                enfermedades, medicamentos,
+                club, categoria, rama, ligas_participa,
+                ruta_foto,
                 data.get('zona') or None,
                 data.get('licencia') or None,
+                firma_base64_guardar,
             ))
             id_persona = cur.lastrowid
 
+        # ── Autorización pendiente ────────────────────────────────
         cur.execute("""
             INSERT INTO autorizacion_pendiente
                 (tipo_solicitud, id_referencia, fecha_solicitud, estatus)
             VALUES (%s, %s, NOW(), 'Pendiente')
         """, (tipo, id_persona))
 
+        # ── Notificar a todos los admins ──────────────────────────
         cur.execute("SELECT id_usuario FROM usuario WHERE activo = 1")
         admins = cur.fetchall()
-        nombre_reg = f"{data.get('apellido_paterno','')} {data.get('nombres','')}".upper().strip()
+        nombre_reg = f"{apellido_paterno} {nombres}".strip()
         for admin in admins:
             notificar(cur, admin['id_usuario'],
-                      f"Nueva solicitud de registro externo: {nombre_reg} ({tipo}). Pendiente de autorización.")
+                      f"Nueva solicitud de registro externo: {nombre_reg} ({tipo}). "
+                      f"Pendiente de autorización.")
 
         mysql.connection.commit()
         cur.close()
@@ -297,7 +421,31 @@ def guardarRegistroExterno():
         cur.close()
         return jsonify({'ok': False, 'mensaje': str(e)}), 500
 
-
+# ── Ruta pública para obtener el siguiente número de registro (formulario externo) ──
+@auth.route("/registro-externo/siguiente_registro")
+def siguienteRegistroExterno():
+    tipo = request.args.get('tipo', '').strip()
+    cur = mysql.connection.cursor()
+    try:
+        if tipo == 'jugador':
+            cur.execute("SELECT COUNT(*) AS total FROM jugador")
+            prefijo = 'JUG'
+        elif tipo == 'entrenador':
+            cur.execute("SELECT COUNT(*) AS total FROM entrenador")
+            prefijo = 'ENT'
+        elif tipo == 'arbitro':
+            cur.execute("SELECT COUNT(*) AS total FROM arbitro")
+            prefijo = 'ARB'
+        else:
+            cur.close()
+            return jsonify({'ok': False}), 400
+        total = cur.fetchone()['total']
+        cur.close()
+        return jsonify({'ok': True, 'numero': f"{prefijo}-{total + 1:03d}"})
+    except Exception as e:
+        cur.close()
+        return jsonify({'ok': False, 'mensaje': str(e)}), 500
+    
 @auth.route("/registroExitoso")
 def registroExitoso():
     return render_template("registro/registroExitoso.html")

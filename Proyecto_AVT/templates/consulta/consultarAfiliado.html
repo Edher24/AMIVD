@@ -1,6 +1,6 @@
 {# Autor: Adriana Nicole Guzman Ahuatzi #}
-{# Descripción: Consulta de afiliados activos. Permite filtrar, ver detalle, cambiar
-   categoría, cambiar estatus y agregar sanciones a cada afiliado. #}
+{# Descripción: Consulta de afiliados con filtro de estatus. Permite filtrar, ver detalle,
+   cambiar categoría, cambiar estatus y agregar sanciones a cada afiliado. #}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -18,8 +18,8 @@
         <!-- Formulario de búsqueda -->
         <form method="GET" action="{{ url_for('consulta.consultarAfiliado') }}">
         <div class="bg-white rounded-xl shadow-md p-6 mb-6">
-            <h2 class="text-xl font-semibold text-gray-900 mb-6">Buscar Afiliados Activos</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <h2 class="text-xl font-semibold text-gray-900 mb-6">Buscar Afiliados</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Nombre</label>
                     <input type="text" name="nombre" value="{{ filtro_nombre }}"
@@ -31,6 +31,16 @@
                     <input type="text" name="curp" value="{{ filtro_curp }}"
                            placeholder="Ingrese CURP"
                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-700">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Estatus</label>
+                    <select name="estatus"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-700">
+                        <option value="activo"   {% if filtro_estatus=='activo'   %}selected{% endif %}>Activos</option>
+                        <option value="inactivo" {% if filtro_estatus=='inactivo' %}selected{% endif %}>Inactivos</option>
+                        <option value="cerrado"  {% if filtro_estatus=='cerrado'  %}selected{% endif %}>Cerrados</option>
+                        <option value="todos"    {% if filtro_estatus=='todos'    %}selected{% endif %}>Todos</option>
+                    </select>
                 </div>
                 <div class="flex items-end">
                     <button type="submit"
@@ -44,29 +54,29 @@
         </div>
         </form>
 
-        <!-- Contadores de afiliados activos -->
+        <!-- Contadores de afiliados -->
         <div class="grid grid-cols-3 gap-4 mb-6">
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-blue-600">{{ activos_jugadores }}</div>
+                <div id="contadorActivos" class="text-2xl font-bold text-green-600">{{ activos_jugadores }}</div>
                 <div class="text-sm text-gray-600">Jugadores Activos</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-green-600">{{ activos_entrenadores }}</div>
-                <div class="text-sm text-gray-600">Entrenadores Activos</div>
+                <div id="contadorInactivos" class="text-2xl font-bold text-yellow-600">{{ inactivos_jugadores }}</div>
+                <div class="text-sm text-gray-600">Jugadores Inactivos</div>
             </div>
             <div class="bg-white rounded-xl shadow-md p-4 text-center">
-                <div class="text-2xl font-bold text-purple-600">{{ activos_arbitros }}</div>
-                <div class="text-sm text-gray-600">Árbitros Activos</div>
+                <div class="text-2xl font-bold text-blue-600">{{ activos_entrenadores }}</div>
+                <div class="text-sm text-gray-600">Entrenadores Activos</div>
             </div>
         </div>
 
-        <!-- Zona de alertas -->
+        <!-- Zona de alertas (fuera del modal) -->
         <div id="alertas" class="mb-4"></div>
 
-        <!-- Tabla de afiliados activos -->
+        <!-- Tabla de afiliados -->
         <div class="bg-white rounded-xl shadow-md overflow-hidden">
             <div class="p-6 border-b flex items-center justify-between">
-                <h3 class="text-xl font-semibold text-gray-900">Afiliados Activos</h3>
+                <h3 class="text-xl font-semibold text-gray-900">Afiliados</h3>
                 <span class="text-sm text-gray-500">{{ resultados|length }} afiliado(s)</span>
             </div>
             <div class="overflow-x-auto">
@@ -95,12 +105,18 @@
                                 <td class="px-6 py-4 text-sm text-gray-600">{{ r['id_expediente'] }}</td>
                                 <td class="px-6 py-4">
                                     <span id="badge-{{ r['id'] }}"
-                                          class="text-xs px-2 py-1 rounded-full font-medium bg-green-100 text-green-700">
+                                          class="text-xs px-2 py-1 rounded-full font-medium
+                                                 {% if r['estatus'] == 'activo' %}
+                                                     bg-green-100 text-green-700
+                                                 {% elif r['estatus'] == 'inactivo' %}
+                                                     bg-yellow-100 text-yellow-700
+                                                 {% else %}
+                                                     bg-gray-100 text-gray-700
+                                                 {% endif %}">
                                         {{ r['estatus']|capitalize }}
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 text-center">
-                                    <!-- Botón para abrir el modal de detalle -->
                                     <button onclick="abrirDetalle({{ r['id'] }})"
                                             class="inline-flex items-center gap-1 px-3 py-1 rounded-lg
                                                    bg-red-700 text-white text-xs hover:bg-red-800 transition-colors">
@@ -114,7 +130,7 @@
                             <tr>
                                 <td colspan="6" class="px-6 py-12 text-center text-gray-400">
                                     <i data-lucide="users" class="w-10 h-10 mx-auto mb-3 opacity-40"></i>
-                                    <p>No se encontraron afiliados activos.</p>
+                                    <p>No se encontraron afiliados con los filtros seleccionados.</p>
                                 </td>
                             </tr>
                         {% endif %}
@@ -140,9 +156,12 @@
                 </button>
             </div>
 
+            <!-- ── Alerta dentro del modal ── -->
+            <div id="alertasModal" class="p-4 hidden"></div>
+
             <div class="p-6 space-y-6">
 
-                <!-- Datos básicos (solo lectura) -->
+                <!-- Datos básicos -->
                 <div class="bg-gray-50 rounded-lg p-4">
                     <h4 class="text-sm font-semibold text-gray-700 mb-3">Datos del Registro</h4>
                     <div class="grid grid-cols-2 gap-3 text-sm text-gray-600">
@@ -200,8 +219,8 @@
                             Marcar Inactivo
                         </button>
                         <p class="text-xs text-gray-400 w-full mt-1">
-                            Al marcar como inactivo, el afiliado desaparece de esta lista
-                            pero su registro sigue visible en Consultar Registro.
+                            Al marcar como inactivo, el afiliado desaparece de la lista de activos.
+                            Puedes verlo seleccionando "Inactivos" en el filtro.
                         </p>
                     </div>
                 </div>
@@ -271,10 +290,8 @@
 
     <script>
         lucide.createIcons();
-
         let idAfiliadoActual = null;
 
-        // Abre el modal y carga los datos del afiliado
         function abrirDetalle(id) {
             idAfiliadoActual = id;
             fetch(`{{ url_for('consulta.consultarAfiliado') }}/${id}`)
@@ -290,11 +307,9 @@
                     document.getElementById('dFechaNac').textContent    = j.fecha_nacimiento || '—';
                     document.getElementById('dCelular').textContent     = j.celular || '—';
 
-                    // Pre-seleccionar categoría actual
                     const sel = document.getElementById('nuevaCategoria');
                     sel.value = j.categoria || '';
 
-                    // Llenar selector de ligas
                     const ligaSel = document.getElementById('ligaSancion');
                     ligaSel.innerHTML = '<option value="">Seleccionar liga</option>';
                     data.ligas.forEach(l => {
@@ -304,7 +319,6 @@
                         ligaSel.appendChild(opt);
                     });
 
-                    // Mostrar sanciones existentes
                     renderSanciones(data.sanciones);
 
                     document.getElementById('modalDetalle').classList.remove('hidden');
@@ -313,7 +327,6 @@
                 .catch(() => mostrarAlerta('error', 'Error', 'No se pudo cargar el detalle.'));
         }
 
-        // Cierra el modal y limpia campos
         function cerrarModal() {
             document.getElementById('modalDetalle').classList.add('hidden');
             document.getElementById('motivoSancion').value = '';
@@ -321,7 +334,6 @@
             idAfiliadoActual = null;
         }
 
-        // Renderiza el historial de sanciones en el modal
         function renderSanciones(sanciones) {
             const contenedor = document.getElementById('historialSanciones');
             const lista      = document.getElementById('listaSanciones');
@@ -351,10 +363,9 @@
             `).join('');
         }
 
-        // Guarda la nueva categoría del afiliado
         function guardarCategoria() {
             const nueva = document.getElementById('nuevaCategoria').value;
-            if (!nueva) { mostrarAlerta('error', 'Error', 'Selecciona una categoría.'); return; }
+            if (!nueva) { mostrarAlertaModal('error', 'Error', 'Selecciona una categoría.'); return; }
             fetch(`{{ url_for('consulta.consultarAfiliado') }}/${idAfiliadoActual}/categoria`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -363,20 +374,18 @@
             .then(r => r.json())
             .then(data => {
                 if (data.ok) {
-                    // Actualizar la celda en la tabla sin recargar
                     const celda = document.getElementById(`cat-${idAfiliadoActual}`);
                     if (celda) celda.textContent = nueva;
-                    mostrarAlerta('success', 'Categoría actualizada', data.mensaje);
+                    mostrarAlertaModal('success', 'Categoría actualizada', data.mensaje);
                 } else {
-                    mostrarAlerta('error', 'Error', data.mensaje);
+                    mostrarAlertaModal('error', 'Error', data.mensaje);
                 }
             });
         }
 
-        // Cambia el estatus del expediente (activo / inactivo)
         function cambiarEstatus(nuevoEstatus) {
             const msg = nuevoEstatus === 'inactivo'
-                ? '¿Marcar como inactivo? El afiliado dejará de aparecer en esta lista.'
+                ? '¿Marcar como inactivo? El afiliado dejará de aparecer en la lista de activos.'
                 : '¿Marcar como activo?';
             if (!confirm(msg)) return;
 
@@ -388,25 +397,28 @@
             .then(r => r.json())
             .then(data => {
                 if (data.ok) {
-                    if (nuevoEstatus === 'inactivo') {
-                        // Quitar la fila de la tabla
-                        document.getElementById(`fila-${idAfiliadoActual}`)?.remove();
-                    } else {
-                        const badge = document.getElementById(`badge-${idAfiliadoActual}`);
-                        if (badge) {
+                    const badge = document.getElementById(`badge-${idAfiliadoActual}`);
+                    if (badge) {
+                        if (nuevoEstatus === 'activo') {
                             badge.textContent = 'Activo';
                             badge.className = 'text-xs px-2 py-1 rounded-full font-medium bg-green-100 text-green-700';
+                        } else if (nuevoEstatus === 'inactivo') {
+                            badge.textContent = 'Inactivo';
+                            badge.className = 'text-xs px-2 py-1 rounded-full font-medium bg-yellow-100 text-yellow-700';
+                        } else {
+                            badge.textContent = 'Cerrado';
+                            badge.className = 'text-xs px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-700';
                         }
                     }
-                    mostrarAlerta('success', 'Estatus actualizado', data.mensaje);
+                    mostrarAlertaModal('success', 'Estatus actualizado', data.mensaje);
+                    actualizarContadoresAfiliados();
                     cerrarModal();
                 } else {
-                    mostrarAlerta('error', 'Error', data.mensaje);
+                    mostrarAlertaModal('error', 'Error', data.mensaje);
                 }
             });
         }
 
-        // Registra una nueva sanción para el afiliado
         function guardarSancion() {
             const tipo   = document.getElementById('tipoSancion').value;
             const liga   = document.getElementById('ligaSancion').value;
@@ -414,7 +426,7 @@
             const fin    = document.getElementById('fechaFinSancion').value || null;
 
             if (!tipo || !liga || !motivo) {
-                mostrarAlerta('error', 'Campos requeridos', 'Tipo, liga y motivo son obligatorios.');
+                mostrarAlertaModal('error', 'Campos requeridos', 'Tipo, liga y motivo son obligatorios.');
                 return;
             }
 
@@ -431,20 +443,57 @@
             .then(r => r.json())
             .then(data => {
                 if (data.ok) {
-                    mostrarAlerta('success', 'Sanción registrada', data.mensaje);
-                    // Limpiar campos
+                    mostrarAlertaModal('success', 'Sanción registrada', data.mensaje);
                     document.getElementById('tipoSancion').value    = '';
                     document.getElementById('motivoSancion').value  = '';
                     document.getElementById('fechaFinSancion').value = '';
-                    // Recargar sanciones en el modal
                     abrirDetalle(idAfiliadoActual);
+                    actualizarContadoresAfiliados();
                 } else {
-                    mostrarAlerta('error', 'Error', data.mensaje);
+                    mostrarAlertaModal('error', 'Error', data.mensaje);
                 }
             });
         }
 
-        // Muestra una alerta temporal en la página
+        // Muestra una alerta dentro del modal
+        function mostrarAlertaModal(tipo, titulo, mensaje) {
+            const estilos = {
+                success: 'bg-green-50 border-green-200 text-green-800',
+                error:   'bg-red-50 border-red-200 text-red-800'
+            };
+            const iconos = { success: 'check-circle', error: 'x-circle' };
+            const contenedor = document.getElementById('alertasModal');
+            contenedor.className = `p-4 ${estilos[tipo]}`;
+            contenedor.innerHTML = `
+                <div class="border rounded-lg p-4 flex items-start gap-3">
+                    <i data-lucide="${iconos[tipo]}" class="w-5 h-5 mt-0.5"></i>
+                    <div>
+                        <p class="font-medium">${titulo}</p>
+                        <p class="text-sm">${mensaje}</p>
+                    </div>
+                </div>`;
+            contenedor.classList.remove('hidden');
+            lucide.createIcons();
+            setTimeout(() => {
+                contenedor.classList.add('hidden');
+                contenedor.innerHTML = '';
+            }, 5000);
+        }
+
+        // Actualiza los contadores de afiliados en tiempo real
+        function actualizarContadoresAfiliados() {
+            fetch('/consulta/contadores-afiliados')
+                .then(r => r.json())
+                .then(data => {
+                    const activos = document.getElementById('contadorActivos');
+                    const inactivos = document.getElementById('contadorInactivos');
+                    if (activos) activos.textContent = data.activos || 0;
+                    if (inactivos) inactivos.textContent = data.inactivos || 0;
+                })
+                .catch(() => {});
+        }
+
+        // Muestra una alerta fuera del modal
         function mostrarAlerta(tipo, titulo, mensaje) {
             const estilos = {
                 success: 'bg-green-50 border-green-200 text-green-800',
@@ -463,7 +512,6 @@
             setTimeout(() => document.getElementById('alertas').innerHTML = '', 5000);
         }
 
-        // Cerrar modal al hacer clic fuera
         document.getElementById('modalDetalle').addEventListener('click', function(e) {
             if (e.target === this) cerrarModal();
         });

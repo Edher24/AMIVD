@@ -85,6 +85,15 @@
         </div>
     </main>
 
+    <!-- Alerta de permisos insuficientes (al intentar entrar a Autorizar sin permiso) -->
+    {% with mensajes = get_flashed_messages(category_filter=['permiso']) %}
+    {% if mensajes %}
+    <script>
+        alert({{ mensajes[0] | tojson }});
+    </script>
+    {% endif %}
+    {% endwith %}
+
     <script>
         /* Inicializa los íconos de Lucide */
         lucide.createIcons();

@@ -172,7 +172,7 @@
                         </div>
                     </div>
                     <!-- Botón para descargar el expediente en Excel -->
-                    <button onclick="generarExpediente(${r.id_expediente}, '${r.tipo}')"
+                    <button onclick="generarExpediente(${r.id_persona}, '${r.tipo}')"
                             class="btn-vino flex items-center gap-2 whitespace-nowrap flex-shrink-0">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         Descargar Excel
@@ -183,7 +183,7 @@
         }
 
         // Genera y descarga el expediente en formato Excel con barra de progreso simulada
-        function generarExpediente(id_expediente, tipo) {
+        function generarExpediente(id_persona, tipo) {
             document.getElementById('listaResultados').classList.add('hidden');
             document.getElementById('progreso').classList.remove('hidden');
 
@@ -201,7 +201,7 @@
             fetch("{{ url_for('principal.generar_expediente') }}", {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ id_expediente, tipo })
+                body:    JSON.stringify({ id_persona, tipo })
             })
             .then(r => r.blob())
             .then(blob => {
@@ -213,7 +213,7 @@
                 const url  = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href  = url;
-                link.download = `expediente_${id_expediente}.xlsx`;
+                link.download = `expediente_${id_persona}.xlsx`;
                 link.click();
 
                 setTimeout(() => mostrarMensaje(true), 500);

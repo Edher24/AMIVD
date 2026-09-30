@@ -1,3 +1,4 @@
 {
-    "livePreview.defaultPreviewPath": "/Proyecto_AVT/templates/paginaInicio/paginaInicio.html"
+    "livePreview.defaultPreviewPath": "/Proyecto_AVT/templates/paginaInicio/paginaInicio.html",
+    "python-envs.defaultEnvManager": "ms-python.python:system"
 }

@@ -1,10 +1,6 @@
-# ProyectoAVT
-Sistema de monitoreo de inscripciones
-
-
 # AMIVD — Sistema de Monitoreo de Afiliaciones
 
-Sistema web desarrollado en **Flask** para la gestión, registro, control y consulta de afiliados de la Asociación Municipal de Voleibol (AMIVD). Incluye control de acceso por roles, digitalización de documentos, generación de reportes y exportación a Excel.
+Sistema web desarrollado en **Flask** para la gestión, registro, control y consulta de afiliados de la Asociación de Voleibol de Tlaxcala (AVT). Incluye control de acceso por roles, digitalización de documentos, generación de reportes y exportación a Excel.
 
 ---
 
@@ -14,8 +10,8 @@ Sistema web desarrollado en **Flask** para la gestión, registro, control y cons
 - [Tecnologías](#-tecnologías)
 - [Requisitos previos](#-requisitos-previos)
 - [Instalación](#-instalación)
-- [Configuración](#-configuración)
-- [Uso](#-uso)
+- [Configuración](#️-configuración)
+- [Uso](#️-uso)
 - [Estructura del proyecto](#-estructura-del-proyecto)
 - [Roles y permisos](#-roles-y-permisos)
 - [Tests](#-tests)
@@ -25,12 +21,12 @@ Sistema web desarrollado en **Flask** para la gestión, registro, control y cons
 
 ## ✨ Características
 
-- 🔐 **Autenticación con roles**: Administrador, Capturista, Consulta y Autorizador.
+- 🔐 **Autenticación con roles**: Administrador, Presidente y Secretaria.
 - 👥 **Registro de afiliados**: personas, entrenadores, jugadores, árbitros y directivos.
 - 💳 **Registro de pagos** y seguimiento de cuotas.
 - 📄 **Digitalización de documentos**: fotos, firmas e INE de afiliados.
 - 📊 **Reportes del sistema** y exportación a Excel (`.xlsx`).
-- ✉️ **Recuperación de contraseña** y notificaciones por correo.
+- ✉️ **Recuperación de contraseña** y notificaciones por correo (SMTP Gmail).
 - 🛡️ **Control de acceso por rol** (RNF_06) con alertas de permisos.
 - ✅ **Pruebas unitarias** con `pytest`.
 
@@ -53,8 +49,6 @@ Sistema web desarrollado en **Flask** para la gestión, registro, control y cons
 ---
 
 ## 📦 Requisitos previos
-
-Antes de instalar, asegúrate de tener:
 
 - **Python 3.10 o superior** → [Descargar](https://www.python.org/downloads/)
 - **MySQL Server 8.0 o superior** → [Descargar](https://dev.mysql.com/downloads/mysql/)
@@ -118,40 +112,61 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 5. Importa la base de datos
+### 5. Crea la base de datos e importa los datos
 
 ```bash
 mysql -u root -p -e "CREATE DATABASE base_datos_amivd CHARACTER SET utf8mb4;"
 mysql -u root -p base_datos_amivd < databases/base_datos_amivd_actual.sql
 ```
 
-O desde MySQL Workbench: **Server → Data Import → Import from Self-Contained File** y selecciona `databases/base_datos_amivd_actual.sql`.
+O desde **MySQL Workbench**: `Server → Data Import → Import from Self-Contained File` y selecciona `databases/base_datos_amivd_actual.sql`.
 
 ---
 
 ## ⚙️ Configuración
 
-Edita el archivo `config.py` para ajustar tus credenciales de MySQL:
+La configuración está en `config.py` y usa **variables de entorno** con valores por defecto para desarrollo local.
+
+| Variable | Valor por defecto | Descripción |
+|----------|-------------------|-------------|
+| `MYSQL_HOST` | `localhost` | Host de MySQL |
+| `MYSQL_PORT` | `3306` | Puerto de MySQL |
+| `MYSQL_USER` | `root` | Usuario de MySQL |
+| `MYSQL_PASSWORD` | `root` | Contraseña de MySQL |
+| `MYSQL_DB` | `base_datos_amivd` | Nombre de la base de datos |
+| `SECRET_KEY` | `voleibol_avt_tlaxcala_2026` | Clave secreta de Flask |
+
+### Configuración del correo (SMTP)
 
 ```python
-MYSQL_HOST = 'localhost'
-MYSQL_USER = 'root'
-MYSQL_PASSWORD = 'TU_CONTRASEÑA'
-MYSQL_DB = 'base_datos_amivd'
+MAIL_SERVER = 'smtp.gmail.com'
+MAIL_PORT = 587
+MAIL_USE_TLS = True
+MAIL_USERNAME = 'avt@gmail.com'   # ← cambiar por correo real
+MAIL_PASSWORD = '1234'             # ← cambiar por App Password de Gmail
+MAIL_DEFAULT_SENDER = 'avt@gmail.com'
 ```
 
-🔴 **AJUSTA**: Si usas variables de entorno (`.env`), documenta aquí las variables requeridas:
+> ⚠️ **Para producción:** cambia `MYSQL_PASSWORD`, `SECRET_KEY` y las credenciales de correo. En Gmail necesitas generar una **App Password** en tu cuenta (no uses tu contraseña normal).
+
+### Ejemplo con archivo `.env` (opcional)
+
+Si prefieres no tocar `config.py`, crea un archivo `.env` en `Proyecto_AVT/`:
 
 ```env
-FLASK_SECRET_KEY=tu_clave_secreta
 MYSQL_HOST=localhost
+MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=tu_contraseña
 MYSQL_DB=base_datos_amivd
-MAIL_SERVER=smtp.gmail.com
-MAIL_PORT=587
-MAIL_USERNAME=tu_correo@gmail.com
-MAIL_PASSWORD=tu_app_password
+SECRET_KEY=tu_clave_secreta
+```
+
+Y cárgalo al inicio de `app.py` (requiere `python-dotenv`):
+
+```python
+from dotenv import load_dotenv
+load_dotenv()
 ```
 
 ---
@@ -169,15 +184,6 @@ Abre tu navegador en:
 ```
 http://127.0.0.1:5000
 ```
-
-🔴 **AJUSTA**: credenciales de prueba (si las tienes):
-
-| Rol | Usuario | Contraseña |
-|-----|---------|------------|
-| Administrador | `administradorEdher` | `12345678` |
-| Presidente | `presidenteEdher` | `12345678` |
-| Secretaria | `secretarioEdher` | `12345678` |
-
 
 ---
 
@@ -206,12 +212,11 @@ ProyectoAVT/
 
 ## 🔑 Roles y permisos
 
-| Rol | Puede hacer |
-|-----|-------------|
-| **Administrador** | Todo: gestión de usuarios, reportes, configuración |
-| **Capturista** | Registrar afiliados, pagos, digitalizar documentos |
-| **Autorizador** | Aprobar o rechazar registros pendientes |
-| **Consulta** | Solo ver información (lectura) |
+| Rol | Usuario | Contraseña |
+|-----|---------|------------|
+| Administrador | `administradorEdher` | `12345678` |
+| Presidente | `presidenteEdher` | `12345678` |
+| Secretaria | `secretarioEdher` | `12345678` |
 
 El sistema aplica control de acceso por rol (**RNF_06**) con alertas visuales cuando un usuario intenta acceder a un módulo no autorizado.
 
@@ -231,18 +236,26 @@ Ejecutar un módulo específico:
 pytest test/test_auth.py -v
 ```
 
-Ver cobertura (si tienes `pytest-cov` instalado):
+Módulos de prueba incluidos:
 
-```bash
-pytest --cov=. --cov-report=html
-```
+- `test_auth.py` — Login, logout, autenticación.
+- `test_autorizar.py` — Aprobación de registros.
+- `test_consulta.py` — Consultas y búsquedas.
+- `test_paginaInicio.py` — Dashboard y expedientes.
+- `test_registro.py` — Registro de afiliados y pagos.
+- `test_reportes.py` — Generación de reportes.
 
 ---
 
 ## 👤 Autor
 
-**Edher24**
+**Adriana Nicole Guzman Ahuatzi**
 - GitHub: [@Edher24](https://github.com/Edher24)
 - Repositorio: [AMIVD](https://github.com/Edher24/AMIVD)
 
 ---
+
+## 📄 Licencia
+
+Proyecto académico desarrollado para la Asociación de Voleibol de Tlaxcala (AVT).
+Uso exclusivo institucional.
